@@ -25,8 +25,10 @@ def unroll_files(file_folder_list):
             folders_to_check.append(file)
 
     while len(folders_to_check) > 0:
-        folder = listdir(folders_to_check.pop(0))
+        folder_name = folders_to_check.pop(0)
+        folder = listdir(folder_name)
         for file in folder:
+            file = "{}\\{}".format(folder_name, file)
             if isfile(abspath(file)):
                 result_list.append(abspath(file))
             elif isdir(abspath(file)):
@@ -63,14 +65,14 @@ parser.add_argument('-bw', '--borderwidth',
                     nargs=1,
                     type=str,
                     default=["0"],
-                    help="Optional: width of the border, in % of the original width, or px. e.g. 100px, 5% [no unit -> %]")
+                    help="Optional: width of the border, in %% of the original width, or px. e.g. 100px, 5%% [no unit -> %%]")
 
 
 parser.add_argument('-bh', '--borderheight',
                     nargs=1,
                     type=str,
                     default=[None],
-                    help="Optional: height of the border, in % of the original height, or px. e.g. 100px, 5% [no unit -> %]; if none given, will take the value from ")
+                    help="Optional: height of the border, in %% of the original height, or px. e.g. 100px, 5%% [no unit -> %%]; if none given, will take the value from ")
 
 parser.add_argument('-c', '--bordercolor',
                     nargs=1,
@@ -93,6 +95,12 @@ parser.add_argument('-y', '--offsety',
                     type=int,
                     default=[0],
                     help="Optional: offset in the Y axis of the base image on the bordered one.")
+					
+parser.add_argument('-q', '--quality',
+                    nargs=1,
+                    type=int,
+                    default=[95],
+                    help="Optional: quality of the resulting JPEG file. Default: 95")
 
 args = parser.parse_args()
 
@@ -122,9 +130,10 @@ else:
         border_height_unit = BorderUnit.PERCENT
         border_height = int(args.borderheight[0])
 
-i = 0
+i = 1
 for file in file_list:
-    print("[{}/{}]".format(i, len(file_list)))
+    print("[{}/{}] {}".format(i, len(file_list), file))
+    i+=1
     base_img = Image.open(file)
 
     new_width = int(base_img.width + (border_width*2) if border_width_unit == BorderUnit.PIXELS else (1 + (
@@ -159,5 +168,5 @@ for file in file_list:
     if resize:
         new_img = new_img.resize((new_width, new_height), resample=Image.LANCZOS)
 
-    new_img.save(splitext(file)[0] + "-bordered" + splitext(file)[1], quality=95)
+    new_img.save(splitext(file)[0] + "-bordered" + splitext(file)[1], quality=args.quality[0], dpi=(72,72))
 
