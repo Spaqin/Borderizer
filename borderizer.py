@@ -2,7 +2,7 @@
 Image borderizer, for instagram and ""aesthetic"" borders on reddit.
 """
 import argparse
-from PIL import Image, ImageColor
+from PIL import Image, ImageColor, ImageFragment
 from os.path import abspath, isfile, isdir, splitext
 from os import listdir
 import enum
@@ -102,40 +102,41 @@ parser.add_argument('-q', '--quality',
                     default=[95],
                     help="Optional: quality of the resulting JPEG file. Default: 95")
 
-args = parser.parse_args()
+parser.add_argument('-p', '--panoramize',
+                    action='store_true',
+                    help="Panoramize the image (break it into smaller, 1350x1080px chunks")
 
-file_list = unroll_files(args.files_folders)
+parser.add_argument('-pa', '--pano_align',
+                    nargs=1,
+                    type=str,
+                    default=["center"],
+                    help='Align panorama to "center" (default), "left" or "right" - if image does not fit in the chunks, will crop remaining')
 
-if args.borderwidth[0][-1] == '%':
-    border_width_unit = BorderUnit.PERCENT
-    border_width = int(args.borderwidth[0][:-1])
-elif args.borderwidth[0][-2:] == 'px':
-    border_width_unit = BorderUnit.PIXELS
-    border_width = int(args.borderwidth[0][:-2])
-else:
-    border_width_unit = BorderUnit.PERCENT
-    border_width = int(args.borderwidth[0])
 
-if not args.borderheight[0]:
-    border_height = border_width
-    border_height_unit = border_width_unit
-else:
-    if args.borderheight[0][-1] == '%':
-        border_height_unit = BorderUnit.PERCENT
-        border_height = int(args.borderheight[0][:-1])
-    elif args.borderheight[0][-2:] == 'px':
-        border_height_unit = BorderUnit.PIXELS
-        border_height = int(args.borderheight[0][:-2])
-    else:
-        border_height_unit = BorderUnit.PERCENT
-        border_height = int(args.borderheight[0])
+def panoramize(filename, args):
+    base_img = Image.open(filename)
+    inv_ratio = base_img.height/1350
+    new_height = 1350
+    new_width = 1080
 
-i = 1
-for file in file_list:
-    print("[{}/{}] {}".format(i, len(file_list), file))
-    i+=1
-    base_img = Image.open(file)
+    imgs = base_img.width // (new_width * inv_ratio)
+    x_offset = 0
+    diff = base_img.width - imgs * (new_width*inv_ratio)
+    if diff != 0:
+        if args.pano_align[0] == "center":
+            x_offset = base_img.width - (diff/2)
+        elif args.pano_align[0] == "right":
+            x_offset = base_img.width - diff
 
+    crop_width = new_width * inv_ratio
+    for i in range(imgs):
+        resized = base_img.resize([1350, 1080], Image.Resampling.LANCZOS, box=(x_offset, 0, x_offset+crop_width, base_img.height))
+        x_offset += crop_width
+        resized.save(splitext(filename)[0] + "-pano-" + str(i) + splitext(filename)[1], quality=args.quality[0], dpi=(72,72))
+
+
+def borderize(filename, border_width, border_width_unit, border_height, border_height_unit, args):
+    base_img = Image.open(filename)
     new_width = int(base_img.width + (border_width*2) if border_width_unit == BorderUnit.PIXELS else (1 + (
                 border_width / 50)) * base_img.width)
     new_height = int(base_img.height + (border_height*2) if border_height_unit == BorderUnit.PIXELS else (1 + (
@@ -168,5 +169,42 @@ for file in file_list:
     if resize:
         new_img = new_img.resize((new_width, new_height), resample=Image.LANCZOS)
 
-    new_img.save(splitext(file)[0] + "-bordered" + splitext(file)[1], quality=args.quality[0], dpi=(72,72))
+    new_img.save(splitext(filename)[0] + "-bordered" + splitext(filename)[1], quality=args.quality[0], dpi=(72,72))
 
+
+args = parser.parse_args()
+
+file_list = unroll_files(args.files_folders)
+
+    if args.borderwidth[0][-1] == '%':
+        border_width_unit = BorderUnit.PERCENT
+        border_width = int(args.borderwidth[0][:-1])
+    elif args.borderwidth[0][-2:] == 'px':
+        border_width_unit = BorderUnit.PIXELS
+        border_width = int(args.borderwidth[0][:-2])
+    else:
+        border_width_unit = BorderUnit.PERCENT
+        border_width = int(args.borderwidth[0])
+
+    if not args.borderheight[0]:
+        border_height = border_width
+        border_height_unit = border_width_unit
+    else:
+        if args.borderheight[0][-1] == '%':
+            border_height_unit = BorderUnit.PERCENT
+            border_height = int(args.borderheight[0][:-1])
+        elif args.borderheight[0][-2:] == 'px':
+            border_height_unit = BorderUnit.PIXELS
+            border_height = int(args.borderheight[0][:-2])
+        else:
+            border_height_unit = BorderUnit.PERCENT
+            border_height = int(args.borderheight[0])
+
+i = 1
+for filename in file_list:
+    print("[{}/{}] {}".format(i, len(file_list), filename))
+    i+=1
+    if not args.panoramize:
+        borderize(filename, border_width, border_width_unit, border_height, border_height_unit, args)
+    else:
+        panoramize(filename, args)
