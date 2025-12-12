@@ -104,7 +104,7 @@ parser.add_argument('-q', '--quality',
 
 parser.add_argument('-p', '--panoramize',
                     action='store_true',
-                    help="Panoramize the image (break it into smaller, 1350x1080px chunks")
+                    help="Panoramize the image (break it into smaller, 1350x1080px chunks and create a thumbnail). Takes 1 or 2 images.")
 
 parser.add_argument('-pa', '--pano_align',
                     nargs=1,
@@ -113,26 +113,56 @@ parser.add_argument('-pa', '--pano_align',
                     help='Align panorama to "center" (default), "left" or "right" - if image does not fit in the chunks, will crop remaining')
 
 
-def panoramize(filename, args):
-    base_img = Image.open(filename)
-    inv_ratio = base_img.height/1350
+
+
+
+def panoramize(filenames, args):
     new_height = 1350
     new_width = 1080
+    thumbnail = Image.new("RGB", (new_width, new_height), (0, 0, 0))
+    if len(filenames) > 2:
+        raise ValueError("Can only panoramize 1 or 2 files at a time")
 
-    imgs = base_img.width // (new_width * inv_ratio)
-    x_offset = 0
-    diff = base_img.width - imgs * (new_width*inv_ratio)
-    if diff != 0:
-        if args.pano_align[0] == "center":
-            x_offset = base_img.width - (diff/2)
-        elif args.pano_align[0] == "right":
-            x_offset = base_img.width - diff
+    if len(filenames) == 1:
+        base_img = Image.open(filenames[0])
+        inv_ratio = base_img.height / (new_height/2)
+        resized = base_img.resize((int(base_img.width / inv_ratio), int(base_img.height / inv_ratio)), Image.Resampling.LANCZOS)
+        thumbnail.paste(resized, (int(new_width/2 - resized.width/2), int(new_height/2 - resized.height/2)))
 
-    crop_width = new_width * inv_ratio
-    for i in range(imgs):
-        resized = base_img.resize([1350, 1080], Image.Resampling.LANCZOS, box=(x_offset, 0, x_offset+crop_width, base_img.height))
-        x_offset += crop_width
-        resized.save(splitext(filename)[0] + "-pano-" + str(i) + splitext(filename)[1], quality=args.quality[0], dpi=(72,72))
+    if len(filenames) == 2:
+        base_img = Image.open(filenames[0])
+        inv_ratio = base_img.height / (new_height/3)
+        resized = base_img.resize((int(base_img.width / inv_ratio), int(base_img.height / inv_ratio)), Image.Resampling.LANCZOS)
+        thumbnail.paste(resized, (int(new_width/2 - resized.width/2), int(new_height/3 - resized.height/2)))
+
+        base_img2 = Image.open(filenames[1])
+        inv_ratio2 = base_img2.height / (new_height/3)
+        resized2 = base_img2.resize((int(base_img2.width / inv_ratio2), int(base_img2.height / inv_ratio2)), Image.Resampling.LANCZOS)
+        thumbnail.paste(resized2, (int(new_width/2 - resized2.width/2), int(new_height*2/3 - resized2.height/2)))
+
+    thumbnail.save(splitext(filenames[0])[0] + "-thumbnail" + splitext(filenames[0])[1], quality=args.quality[0], dpi=(72,72))
+
+    for filename in filenames:
+        base_img = Image.open(filename)
+        inv_ratio = base_img.height/1350
+        
+        imgs = base_img.width // (new_width * inv_ratio)
+        x_offset = 0
+        diff = base_img.width - imgs * (new_width*inv_ratio)
+        if diff != 0:
+            if args.pano_align[0] == "center":
+                x_offset = diff/2
+            elif args.pano_align[0] == "right":
+                x_offset = diff
+
+        crop_width = new_width * inv_ratio
+        for i in range(int(imgs)):
+            im = base_img.copy()
+            resized = im.resize([int(base_img.width/inv_ratio), new_height], Image.Resampling.LANCZOS)
+            
+            crop = resized.crop(box=(x_offset, 0, x_offset+new_width, new_height))
+            x_offset += new_width
+            crop.save(splitext(filename)[0] + "-pano-" + str(i) + splitext(filename)[1], quality=args.quality[0], dpi=(72,72))
 
 
 def borderize(filename, border_width, border_width_unit, border_height, border_height_unit, args):
@@ -176,6 +206,9 @@ args = parser.parse_args()
 
 file_list = unroll_files(args.files_folders)
 
+if args.panoramize:
+    panoramize(file_list, args)
+else:
     if args.borderwidth[0][-1] == '%':
         border_width_unit = BorderUnit.PERCENT
         border_width = int(args.borderwidth[0][:-1])
@@ -199,12 +232,8 @@ file_list = unroll_files(args.files_folders)
         else:
             border_height_unit = BorderUnit.PERCENT
             border_height = int(args.borderheight[0])
-
-i = 1
-for filename in file_list:
-    print("[{}/{}] {}".format(i, len(file_list), filename))
-    i+=1
-    if not args.panoramize:
+    i = 1
+    for filename in file_list:
+        print("[{}/{}] {}".format(i, len(file_list), filename))
+        i+=1
         borderize(filename, border_width, border_width_unit, border_height, border_height_unit, args)
-    else:
-        panoramize(filename, args)
